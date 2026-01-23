@@ -88,8 +88,10 @@ HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
     const TriInvColumnSweepTiling tiling{block_dim, num_elems, matrix_size};
     const at::Tensor tiling_device = calc_tiling(tiling);
 
+    const at::Tensor workspace = at::empty_like(tensor);
+
     if (dtype == at::kHalf) {
-        EXEC_KERNEL_CMD(tri_inv_cube_col_sweep, block_dim, tensor, tensor_out, tiling_device);
+        EXEC_KERNEL_CMD(tri_inv_cube_col_sweep, block_dim, tensor, tensor_out, workspace, tiling_device);
     } else {
         throw std::runtime_error("Unsupported data type for tri_inv_cube_col_sweep. fp16 is currently supported.");
     }

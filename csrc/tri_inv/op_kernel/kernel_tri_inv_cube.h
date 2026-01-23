@@ -18,6 +18,7 @@
 #pragma once
 
 #include "kernel_operator.h"
+#include "kernel_mat_gen.h"
 
 namespace sglang {
 
@@ -80,14 +81,14 @@ public:
     __aicore__ inline void Process()
     {
         // On the first iteration, the AIVs will send the identity matrix to AIC
-        // SyncGroup();
+        SyncGroup();
         LoadIdentityMatrixinL0C();
 
         // Matrix column sweep algorithm requires `matrix_size_` iterations.
         for (uint32_t iter = 0; iter < matrix_size_; iter++) {
             (void)iter;
             // Sync with all AIVs in group, to write the matrix.
-            // SyncGroup();
+            SyncGroup();
 
             // Load next matrix A and perform C = A @ C
             LoadMatrixAintoL0A();
@@ -272,26 +273,33 @@ private:
         dst_q.EnQue(dst_lt);
     }
 
-    // /**
-    //  * @brief Synchronize cube and vector cores within a single group.
-    //  *
-    //  */
-    // __aicore__ inline void SyncGroup()
-    // {
-    //     const int mode = 2;
+    /**
+     * @brief Returns a synchronization config.
+     *
+     * @param [in] mode Synchronization mode.
+     * @param [in] flag_id Flag to use for synchronization.
+     * @return Synchronization config.
+     */
+    __aicore__ inline int GetSyncConf(int mode, int flag_id)
+    {
+        return 1 | (mode << 4) | (flag_id << 8);
+    }
 
-    //     const int AIV_SET_FLAG_ID = 11;
-    //     const int AIC_SET_FLAG_ID = 12;
-    //     if ASCEND_IS_AIV {
-    //         ffts_cross_core_sync(PIPE_MTE3, GetSyncConf(mode, AIV_SET_FLAG_ID));
-    //         wait_flag_dev(AIC_SET_FLAG_ID);
-    //     }
-    //     if ASCEND_IS_AIC {
-    //         ffts_cross_core_sync(PIPE_FIX, GetSyncConf(mode, AIC_SET_FLAG_ID));
-    //         wait_flag_dev(AIV_SET_FLAG_ID);
-    //     }
-    //     return;
-    // }
+    /**
+     * @brief Synchronize cube and vector cores within a single group.
+     *
+     */
+    __aicore__ inline void SyncGroup()
+    {
+        const int mode = 2;
+
+        const int AIV_SET_FLAG_ID = 11;
+        const int AIC_SET_FLAG_ID = 12;
+        ffts_cross_core_sync(PIPE_FIX, GetSyncConf(mode, AIC_SET_FLAG_ID));
+        wait_flag_dev(AIV_SET_FLAG_ID);
+
+        return;
+    }
 
     /**
      * @brief Perform matrix multiplication in Cube unit, like C = A @ C
@@ -438,12 +446,18 @@ private:
  * @param [in] matrix_size Input square matrix size to invert.
  */
 template <typename InputT>
-__aicore__ inline void run_tri_inv_cube_col_sweep(GM_ADDR matrix_stream_in, GM_ADDR inv_matrix_out, uint32_t vec_len,
-                                                  uint32_t matrix_size)
+__aicore__ inline void run_tri_inv_cube_col_sweep(GM_ADDR matrix_stream_in, GM_ADDR inv_matrix_out, GM_ADDR workspace,
+                                                  uint32_t vec_len, uint32_t matrix_size)
 {
+    if ASCEND_IS_AIV {
+        KernelMatGen<half> op(matrix_size);
+        op.Init(matrix_stream_in, workspace);
+        op.Process();
+    }
+
     if ASCEND_IS_AIC {
         KernelTriInvCubeColSweep<InputT> op(vec_len, matrix_size);
-        op.Init(matrix_stream_in, inv_matrix_out);
+        op.Init(workspace, inv_matrix_out);
         op.Process();
     }
 }
