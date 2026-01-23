@@ -9,6 +9,7 @@
 // limitations under the License.
 
 #include "kernel_tri_inv.h"
+#include "kernel_tri_inv_cube.h"
 
 #include "../op_host/tiling_tri_inv.h"
 
@@ -38,4 +39,18 @@ extern "C" __global__ __aicore__ void tri_inv_col_sweep_fp32(GM_ADDR vec_in, GM_
     sglang::npu_kernel::TriInvColumnSweepTiling tiling;
     sglang::npu_kernel::GetTilingData(&tiling, tiling_gm);
     sglang::npu_kernel::run_tri_inv_col_sweep<float>(vec_in, vec_out, tiling.num_elems, tiling.matrix_size);
+}
+
+/**
+ * @brief Run the `tri_inv_cube_col_sweep` kernel on dtype fp16/half.
+ *
+ * @param [in] vec_in Pointer to input vector.
+ * @param [in] vec_out Pointer to output vector.
+ * @param [in] tiling_gm Pointer to tiling vector.
+ */
+extern "C" __global__ __aicore__ void tri_inv_cube_col_sweep(GM_ADDR vec_in, GM_ADDR vec_out, GM_ADDR tiling_gm)
+{
+    sglang::npu_kernel::TriInvColumnSweepTiling tiling;
+    sglang::npu_kernel::GetTilingData(&tiling, tiling_gm);
+    sglang::npu_kernel::run_tri_inv_cube_col_sweep<half>(vec_in, vec_out, tiling.num_elems, tiling.matrix_size);
 }

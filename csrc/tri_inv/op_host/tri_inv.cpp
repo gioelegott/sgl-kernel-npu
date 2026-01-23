@@ -14,6 +14,7 @@
 #include "tiling_tri_inv.h"
 #include "aclrtlaunch_tri_inv_col_sweep_fp16.h"
 #include "aclrtlaunch_tri_inv_col_sweep_fp32.h"
+#include "aclrtlaunch_tri_inv_cube_col_sweep.h"
 
 namespace sglang {
 
@@ -62,6 +63,35 @@ HOST_API at::Tensor tri_inv_col_sweep(const at::Tensor &tensor)
         EXEC_KERNEL_CMD(tri_inv_col_sweep_fp32, block_dim, tensor, tensor_out, tiling_device);
     } else {
         throw std::runtime_error("Unsupported data type for tri_inv_col_sweep. fp16 and fp32 are currently supported.");
+    }
+
+    return tensor_out;
+}
+
+HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
+{
+    const auto dtype = tensor.options().dtype();
+    if (tensor.dim() < 2) {
+        throw std::runtime_error("Input tensor must have at least 2 dimensions.\n");
+    }
+
+    const uint32_t matrix_size = static_cast<uint32_t>(tensor.size(-1));
+    if (matrix_size != tensor.size(-2)) {
+        throw std::runtime_error("Only square matrices are supported.\n");
+    }
+
+    const uint32_t num_elems = static_cast<uint32_t>(tensor.numel());
+    const uint32_t block_dim = static_cast<uint32_t>(num_elems / (matrix_size * matrix_size));
+
+    const at::Tensor tensor_out = at::empty_like(tensor);
+
+    const TriInvColumnSweepTiling tiling{block_dim, num_elems, matrix_size};
+    const at::Tensor tiling_device = calc_tiling(tiling);
+
+    if (dtype == at::kHalf) {
+        EXEC_KERNEL_CMD(tri_inv_cube_col_sweep, block_dim, tensor, tensor_out, tiling_device);
+    } else {
+        throw std::runtime_error("Unsupported data type for tri_inv_cube_col_sweep. fp16 is currently supported.");
     }
 
     return tensor_out;
