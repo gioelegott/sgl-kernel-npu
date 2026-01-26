@@ -19,8 +19,8 @@
  * @param [in] vec_out Pointer to output vector.
  * @param [in] tiling_gm Pointer to tiling vector.
  */
-extern "C" __global__ __aicore__ void tri_inv_cube_col_sweep(GM_ADDR vec_in, GM_ADDR vec_out, GM_ADDR workspace,
-                                                             GM_ADDR tiling_gm)
+extern "C" __global__ __aicore__ void tri_inv_cube_col_sweep_fp16(GM_ADDR vec_in, GM_ADDR vec_out, GM_ADDR workspace,
+                                                                  GM_ADDR tiling_gm)
 {
     sglang::npu_kernel::TriInvColumnSweepCubeTiling tiling;
     sglang::npu_kernel::GetTilingData(&tiling, tiling_gm);

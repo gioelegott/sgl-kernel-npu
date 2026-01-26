@@ -12,7 +12,8 @@
 #include "torch_helper.h"
 
 #include "tiling_tri_inv_cube.h"
-#include "aclrtlaunch_tri_inv_cube_col_sweep.h"
+#include "aclrtlaunch_tri_inv_cube_col_sweep_fp16.h"
+#include "tiling/platform/platform_ascendc.h"
 
 namespace sglang {
 
@@ -38,6 +39,7 @@ at::Tensor calc_tiling(const TriInvColumnSweepCubeTiling &tiling)
 
 HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
 {
+    platform_ascendc::PlatformAscendC *platformAscendC = platform_ascendc::PlatformAscendCManager::GetInstance();
     const auto dtype = tensor.options().dtype();
     if (tensor.dim() < 2) {
         throw std::runtime_error("Input tensor must have at least 2 dimensions.\n");
@@ -51,15 +53,20 @@ HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
     const uint32_t num_elems = static_cast<uint32_t>(tensor.numel());
     const uint32_t block_dim = static_cast<uint32_t>(num_elems / (matrix_size * matrix_size));
 
-    const at::Tensor tensor_out = at::empty_like(tensor);
+    auto tensor_out = at::empty({tensor.size(0), tensor.size(1), tensor.size(2)},
+                                at::TensorOptions().dtype(at::kFloat).device(tensor.options().device()));
 
     const TriInvColumnSweepCubeTiling tiling{block_dim, num_elems, matrix_size};
     const at::Tensor tiling_device = calc_tiling(tiling);
 
-    const at::Tensor workspace = at::empty_like(tensor);
+    // workspace
+    const uint64_t system_workspace_size = static_cast<uint64_t>(platformAscendC->GetLibApiWorkSpaceSize());
+    const uint64_t workspace_size = system_workspace_size + num_elems * 4;
+    const auto options = at::TensorOptions().dtype(at::kByte).device(tensor.options().device());
+    auto workspace = at::empty({static_cast<int64_t>(workspace_size)}, options);
 
     if (dtype == at::kHalf) {
-        EXEC_KERNEL_CMD(tri_inv_cube_col_sweep, block_dim, tensor, tensor_out, workspace, tiling_device);
+        EXEC_KERNEL_CMD(tri_inv_cube_col_sweep_fp16, block_dim, tensor, tensor_out, workspace, tiling_device);
     } else {
         throw std::runtime_error("Unsupported data type for tri_inv_cube_col_sweep. fp16 is currently supported.");
     }
