@@ -450,7 +450,7 @@ __aicore__ inline void run_tri_inv_cube_col_sweep(GM_ADDR matrix_stream_in, GM_A
                                                   uint32_t vec_len, uint32_t matrix_size)
 {
     if ASCEND_IS_AIV {
-        KernelMatGen<half> op(matrix_size);
+        KernelMatGen<InputT> op(matrix_size);
         op.Init(matrix_stream_in, workspace);
         op.Process();
     }
@@ -459,6 +459,24 @@ __aicore__ inline void run_tri_inv_cube_col_sweep(GM_ADDR matrix_stream_in, GM_A
         KernelTriInvCubeColSweep<InputT> op(vec_len, matrix_size);
         op.Init(workspace, inv_matrix_out);
         op.Process();
+    }
+}
+
+/**
+ * @brief Copies tiling structure from global memory to registers.
+ *
+ * @tparam TilingT Structure representing kernel tiling parameters.
+ * @param [in] tiling Pointer to the structure allocated in registers.
+ * @param [in] tiling_global Pointer to the structure in global memory.
+ */
+template <typename TilingT>
+__aicore__ inline void GetTilingData(TilingT *const tiling, GM_ADDR tiling_global)
+{
+    uint32_t *const tiling_32b = reinterpret_cast<uint32_t *>(tiling);
+    const __gm__ uint32_t *const tiling_global_32b = reinterpret_cast<__gm__ uint32_t *>(tiling_global);
+
+    for (uint32_t i = 0; i < sizeof(TilingT) / sizeof(uint32_t); i++) {
+        tiling_32b[i] = tiling_global_32b[i];
     }
 }
 

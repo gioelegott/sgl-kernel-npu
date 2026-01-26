@@ -7,6 +7,9 @@
  */
 #pragma once
 
+namespace sglang {
+
+namespace npu_kernel {
 /**
  * @brief Returns a sequence of matrices that encode the column-sweep steps in
  * matrix notation. On the first iteration, it returns the identity matrix.
@@ -207,3 +210,5 @@ private:
     const uint32_t aic_id_;
     const uint32_t global_offset_;
 };
+}  // namespace npu_kernel
+}  // namespace sglang
