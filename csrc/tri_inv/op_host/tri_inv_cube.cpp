@@ -40,6 +40,8 @@ at::Tensor calc_tiling(const TriInvColumnSweepCubeTiling &tiling)
 HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
 {
     platform_ascendc::PlatformAscendC *platformAscendC = platform_ascendc::PlatformAscendCManager::GetInstance();
+    auto acl_stream = c10_npu::getCurrentNPUStream().stream(false);
+
     const auto dtype = tensor.options().dtype();
     if (tensor.dim() < 2) {
         throw std::runtime_error("Input tensor must have at least 2 dimensions.\n");
@@ -53,8 +55,7 @@ HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
     const uint32_t num_elems = static_cast<uint32_t>(tensor.numel());
     const uint32_t block_dim = static_cast<uint32_t>(num_elems / (matrix_size * matrix_size));
 
-    auto tensor_out = at::empty({tensor.size(0), tensor.size(1), tensor.size(2)},
-                                at::TensorOptions().dtype(at::kFloat).device(tensor.options().device()));
+    auto tensor_out = at::empty_like(tensor, at::kFloat);
 
     const TriInvColumnSweepCubeTiling tiling{block_dim, num_elems, matrix_size};
     const at::Tensor tiling_device = calc_tiling(tiling);
@@ -70,7 +71,7 @@ HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
     } else {
         throw std::runtime_error("Unsupported data type for tri_inv_cube_col_sweep. fp16 is currently supported.");
     }
-
+    aclrtSynchronizeStream(acl_stream);
     return tensor_out;
 }
 
