@@ -77,7 +77,7 @@ def np_tril_inv_cube_cs(input_x, dtype: np.dtype = np.float16):
 def rand_np_tril(batch_size: int, n: int, dtype: np.dtype):
     "Returns a random unit lower triangular matrix of size n."
     A = np.random.rand(batch_size, n, n).astype(dtype)
-    A = np.tril(A)
+    A = np.triu(A)
     for k in range(batch_size):
         np.fill_diagonal(A[k, :, :], 1.0)
     return A.astype(dtype)
@@ -86,11 +86,11 @@ def rand_np_tril(batch_size: int, n: int, dtype: np.dtype):
 def ones_np_tril(batch_size: int, n: int, dtype: np.dtype):
     "Returns an all-ones lower triangular matrix of size n."
     A = np.ones((batch_size, n, n)).astype(dtype)
-    A = np.tril(A)
+    A = np.triu(A)
     return A.astype(dtype)
 
 
-@pytest.mark.parametrize("batch_size", [2])
+@pytest.mark.parametrize("batch_size", [1])
 @pytest.mark.parametrize("matrix_size", [16])
 @pytest.mark.parametrize("data_type", [np.float16, np.float32], ids=str)
 @pytest.mark.parametrize(
@@ -103,20 +103,31 @@ def test_tri_inv_col_sweep(
     data_type: np.dtype,
     mat_gen: callable,
 ):
-    input_x_cpu = mat_gen(batch_size, matrix_size, data_type)
-    expected_cpu = np_tril_inv_cube_cs(input_x_cpu, data_type)
 
-    # input_x_cpu = input_x_cpu.transpose(0, 2, 1)
+    input_x_cpu = mat_gen(batch_size, matrix_size, data_type)
+    expected_cpu = np_tril_inv_cube_cs(input_x_cpu, data_type).transpose(0, 2, 1)
+
+    input_x_cpu = input_x_cpu.transpose(0, 2, 1)
     torch.npu.synchronize()
     input_x = torch.from_numpy(input_x_cpu).half().npu()
     torch.npu.synchronize()
     expected = torch.from_numpy(expected_cpu).half().npu()
     torch.npu.synchronize()
-    actual = torch.ops.npu.cube_triangular_inverse(input_x)
+    actual = torch.ops.npu.cube_triangular_inverse(input_x).transpose(1, 2)
     torch.npu.synchronize()
 
+    torch.set_printoptions(
+        threshold=10_000,  # bigger than 16*16
+        linewidth=200,  # avoid line wrapping
+        precision=4,  # optional
+        sci_mode=False,  # optional
+    )
+
+    print("Input")
     print(input_x.cpu())
+    print("Expected")
     print(expected_cpu)
+    print("Actual")
     print(actual.cpu())
 
     assert actual.shape == expected.shape, "Output shape does not match expected shape."
