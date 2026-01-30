@@ -182,8 +182,8 @@ def test_tri_inv_col_sweep_np_linalg_inv(
     atol: float,
     rtol: float,
 ):
-
-    input_x_cpu = mat_gen(batch_size, matrix_size, data_type)
+    # the copy forces the input to be contiguous
+    input_x_cpu = mat_gen(batch_size, matrix_size, data_type).transpose(0, 2, 1).copy()
     golden_numpy_cpu = np.linalg.inv(input_x_cpu)
 
     # Convert input matrices from row-major order to column-major order
