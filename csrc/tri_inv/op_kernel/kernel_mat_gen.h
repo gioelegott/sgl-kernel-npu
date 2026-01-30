@@ -53,7 +53,8 @@ public:
         : matrix_size_(matrix_size),
           tile_len_(matrix_size * matrix_size),
           aic_id_(AscendC::GetBlockIdx() / AscendC::GetTaskRation()),
-          global_offset_(aic_id_ * tile_len_)
+          global_in_offset_(aic_id_ * tile_len_),
+          global_out_offset_(aic_id_ * tile_len_ * matrix_size_)
     {}
 
     /**
@@ -81,7 +82,7 @@ public:
     {
         // Read input matrix into work_buf_.
         const AscendC::LocalTensor<T> in_lt = in_q_.template AllocTensor<T>();
-        DataCopy(in_lt, global_in_[global_offset_], in_lt.GetSize());
+        DataCopy(in_lt, global_in_[global_in_offset_], in_lt.GetSize());
         in_q_.EnQue(in_lt);
 
         ReadInputMatrixInUB();
@@ -90,7 +91,7 @@ public:
         if (AscendC::GetSubBlockIdx() == 0) {
             EnQueueIdentityMatrix();
             AscendC::LocalTensor<T> out_lt = out_q_.template DeQue<T>();
-            DataCopy(global_out_[global_offset_], out_lt, out_lt.GetSize());
+            DataCopy(global_out_[global_out_offset_], out_lt, out_lt.GetSize());
             out_q_.FreeTensor(out_lt);
         }
 
@@ -101,6 +102,7 @@ public:
         SyncGroup();
 
         const AscendC::LocalTensor<T> work_lt = work_buf_.Get<T>();
+        uint32_t idx = 1;
 
         // Matrix column sweep algorithm requires `matrix_size_` iterations.
         for (int32_t col_index = matrix_size_ - 2; col_index >= 0; col_index--) {
@@ -124,7 +126,7 @@ public:
                 out_q_.EnQue<T>(vec_out_lt);
 
                 AscendC::LocalTensor<T> out_lt = out_q_.template DeQue<T>();
-                DataCopy(global_out_[global_offset_], out_lt, out_lt.GetSize());
+                DataCopy(global_out_[global_out_offset_ + (idx++) * tile_len_], out_lt, out_lt.GetSize());
                 out_q_.FreeTensor(out_lt);
             }
 
@@ -208,7 +210,8 @@ private:
     const uint32_t matrix_size_;
     const uint32_t tile_len_;
     const uint32_t aic_id_;
-    const uint32_t global_offset_;
+    const uint32_t global_in_offset_;
+    const uint32_t global_out_offset_;
 };
 }  // namespace npu_kernel
 }  // namespace sglang

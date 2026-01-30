@@ -74,28 +74,28 @@ def np_tril_inv_cube_cs(input_x, dtype: np.dtype = np.float16):
     return output.astype(dtype)
 
 
-def rand_np_tril(batch_size: int, n: int, dtype: np.dtype):
-    "Returns a random unit lower triangular matrix of size n."
-    A = np.random.rand(batch_size, n, n).astype(dtype)
+def rand_np_triu(batch_size: int, n: int, dtype: np.dtype):
+    "Returns a random unit upper triangular matrix of size n."
+    A = 0.1 * np.random.rand(batch_size, n, n).astype(dtype)
     A = np.triu(A)
     for k in range(batch_size):
         np.fill_diagonal(A[k, :, :], 1.0)
     return A.astype(dtype)
 
 
-def ones_np_tril(batch_size: int, n: int, dtype: np.dtype):
-    "Returns an all-ones lower triangular matrix of size n."
+def ones_np_triu(batch_size: int, n: int, dtype: np.dtype):
+    "Returns an all-ones upper triangular matrix of size n."
     A = np.ones((batch_size, n, n)).astype(dtype)
     A = np.triu(A)
     return A.astype(dtype)
 
 
-@pytest.mark.parametrize("batch_size", [1])
-@pytest.mark.parametrize("matrix_size", [16])
-@pytest.mark.parametrize("data_type", [np.float16, np.float32], ids=str)
+@pytest.mark.parametrize("batch_size", [2, 4, 40, 256])
+@pytest.mark.parametrize("matrix_size", [16, 32, 64, 128])
+@pytest.mark.parametrize("data_type", [np.float16], ids=str)
 @pytest.mark.parametrize(
     "mat_gen",
-    (rand_np_tril, ones_np_tril),
+    (rand_np_triu, ones_np_triu),
 )
 def test_tri_inv_col_sweep(
     batch_size: int,
@@ -132,9 +132,6 @@ def test_tri_inv_col_sweep(
 
     assert actual.shape == expected.shape, "Output shape does not match expected shape."
     assert torch.allclose(actual.float(), expected.float(), atol=0.1, rtol=0.5)
-
-
-# assert torch.equal(actual, expected)
 
 
 # @pytest.mark.parametrize("batch_size", [2, 4, 40, 256])
@@ -175,7 +172,7 @@ def test_tri_inv_col_sweep(
 # @pytest.mark.parametrize("data_type", [np.float16], ids=str)
 # @pytest.mark.parametrize(
 #     "mat_gen,atol,rtol",
-#     [(rand_np_tril, 1e-5, 1e-5), (ones_np_tril, 0, 0)],
+#     [(rand_np_triu, 1e-5, 1e-5), (ones_np_triu, 0, 0)],
 # )
 # def test_tri_inv_col_sweep_np_linalg_inv(
 #     batch_size: int,

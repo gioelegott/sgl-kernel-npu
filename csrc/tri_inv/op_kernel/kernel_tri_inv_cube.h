@@ -51,7 +51,8 @@ public:
         : vec_len_(vec_len),
           matrix_size_(matrix_size),
           tile_len_(matrix_size * matrix_size),
-          global_offset_(AscendC::GetBlockIdx() * tile_len_)
+          global_in_offset_(AscendC::GetBlockIdx() * tile_len_ * matrix_size),
+          global_out_offset_(AscendC::GetBlockIdx() * tile_len_)
     {}
 
     /**
@@ -64,7 +65,7 @@ public:
      */
     __aicore__ inline void Init(GM_ADDR matrix_stream_in, GM_ADDR inv_matrix_out)
     {
-        global_A_.SetGlobalBuffer((__gm__ InputT *)matrix_stream_in, vec_len_);
+        global_A_.SetGlobalBuffer((__gm__ InputT *)matrix_stream_in, vec_len_ * matrix_size_);
         global_C_.SetGlobalBuffer((__gm__ OutputT *)inv_matrix_out, vec_len_);
 
         pipe_.InitBuffer(a1_q_, 1, tile_len_ * sizeof(InputT));
@@ -86,12 +87,12 @@ public:
 
         // Matrix column sweep algorithm requires `matrix_size_` iterations.
         for (uint32_t iter = 0; iter < matrix_size_; iter++) {
-            (void)iter;
             // Sync with all AIVs in group, to write the matrix.
             SyncGroup();
 
             // Load next matrix A and perform C = A @ C
-            LoadMatrixAintoL0A();
+            LoadMatrixAintoL0A(iter);
+            AscendC::PipeBarrier<PIPE_ALL>();
             MultiplyAWithC();
             AscendC::PipeBarrier<PIPE_ALL>();
         }
@@ -104,10 +105,10 @@ private:
     /**
      * @brief Loads matrix from global memory into L0A (`a1_q_` queue).
      */
-    __aicore__ inline void LoadMatrixAintoL0A()
+    __aicore__ inline void LoadMatrixAintoL0A(uint32_t iter)
     {
         // Load matrix from global_A_ into L1
-        CopyGmToL1A(a1_q_, global_A_[global_offset_], m_blocks_, k_blocks_);
+        CopyGmToL1A(a1_q_, global_A_[global_in_offset_ + iter * tile_len_], m_blocks_, k_blocks_);
         CopyL1ToL0A(a2_q_, a1_q_, m_blocks_, k_blocks_);
     }
 
@@ -351,7 +352,7 @@ private:
      */
     __aicore__ inline void LoadIdentityMatrixinL0A()
     {
-        CopyGmToL1A(a1_q_, global_A_[global_offset_], m_blocks_, k_blocks_);
+        CopyGmToL1A(a1_q_, global_A_[global_in_offset_], m_blocks_, k_blocks_);
         CopyL1ToL0A(a2_q_, a1_q_, m_blocks_, k_blocks_);
     }
 
@@ -362,7 +363,7 @@ private:
     __aicore__ inline void LoadIdentityMatrixinL0B()
     {
         // Here, we "abuse" the 'global_A_' pointer
-        CopyGmToL1B(b1_q_, global_A_[global_offset_], k_blocks_, n_blocks_);
+        CopyGmToL1B(b1_q_, global_A_[global_in_offset_], k_blocks_, n_blocks_);
 
         // Plain copy from L1 to L0B, because the layout is already correct.
         AscendC::LocalTensor<InputT> src = b1_q_.template DeQue<InputT>();
@@ -399,7 +400,7 @@ private:
         nz2nd_params.originalNSize = M_;
         params.nz2ndParams = nz2nd_params;
 
-        AscendC::Fixpipe(global_C_[global_offset_], lt, params);
+        AscendC::Fixpipe(global_C_[global_out_offset_], lt, params);
 
         co1_q_.FreeTensor(lt);
     }
@@ -419,7 +420,8 @@ private:
     const uint32_t vec_len_;
     const uint32_t matrix_size_;
     const uint32_t tile_len_;
-    const uint32_t global_offset_;
+    const uint32_t global_in_offset_;
+    const uint32_t global_out_offset_;
 
     constexpr static uint32_t M_CUBE_BLOCK_SIZE = 16;
     constexpr static uint32_t N_CUBE_BLOCK_SIZE = 16;

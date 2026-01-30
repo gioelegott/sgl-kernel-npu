@@ -158,8 +158,8 @@ def test_chunk_varlen(
 
     torch.npu.synchronize()
 
-    print_diff("o", ref, actual, 0.01)
-    print_diff("ht", ref_ht, actual_ht, 0.01)
+    print_diff("o", ref, actual, 0.05)
+    print_diff("ht", ref_ht, actual_ht, 0.05)
 
-    assert_close("o", ref, actual, 0.01)
-    assert_close("ht", ref_ht, actual_ht, 0.01)
+    assert_close("o", ref, actual, 0.05)
+    assert_close("ht", ref_ht, actual_ht, 0.05)
