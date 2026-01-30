@@ -92,6 +92,39 @@ def ones_np_triu(batch_size: int, n: int, dtype: np.dtype):
 
 @pytest.mark.parametrize("batch_size", [2, 4, 40, 256])
 @pytest.mark.parametrize("matrix_size", [16, 32, 64, 128])
+@pytest.mark.parametrize("data_type", [np.float16, np.float32], ids=str)
+@pytest.mark.parametrize(
+    "mat_gen",
+    (rand_np_triu, ones_np_triu),
+)
+def test_tri_inv_col_sweep(
+    batch_size: int,
+    matrix_size: int,
+    data_type: np.dtype,
+    mat_gen: callable,
+):
+
+    input_x_cpu = mat_gen(batch_size, matrix_size, data_type)
+    expected_cpu = np_triu_inv_cs(input_x_cpu.transpose(0, 2, 1), data_type)
+
+    # Convert input matrices from row-major order to column-major order
+    input_x_cpu = input_x_cpu.transpose(0, 2, 1)
+    input_x = torch.from_numpy(input_x_cpu).npu()
+    expected = torch.from_numpy(expected_cpu).npu()
+
+    torch.npu.synchronize()
+    actual = torch.ops.npu.triangular_inverse(input_x)
+    torch.npu.synchronize()
+    # Transpose matrices back to row-major order
+    actual = actual.transpose(2, 1)
+    torch.npu.synchronize()
+
+    assert actual.shape == expected.shape, "Output shape does not match expected shape."
+    assert torch.equal(actual, expected)
+
+
+@pytest.mark.parametrize("batch_size", [2, 4, 40, 256])
+@pytest.mark.parametrize("matrix_size", [16, 32, 64, 128])
 @pytest.mark.parametrize("data_type", [np.float16], ids=str)
 @pytest.mark.parametrize(
     "mat_gen",
@@ -134,68 +167,35 @@ def test_tri_inv_col_sweep(
     assert torch.allclose(actual.float(), expected.float(), atol=0.1, rtol=0.5)
 
 
-# @pytest.mark.parametrize("batch_size", [2, 4, 40, 256])
-# @pytest.mark.parametrize("matrix_size", [16, 32, 64, 128])
-# @pytest.mark.parametrize("data_type", [np.float16, np.float32], ids=str)
-# @pytest.mark.parametrize(
-#     "mat_gen",
-#     (rand_np_tril, ones_np_tril),
-# )
-# def test_tri_inv_col_sweep(
-#     batch_size: int,
-#     matrix_size: int,
-#     data_type: np.dtype,
-#     mat_gen: callable,
-# ):
+@pytest.mark.parametrize("batch_size", [1, 2, 4, 40, 256])
+@pytest.mark.parametrize("matrix_size", [16, 32, 64, 128])
+@pytest.mark.parametrize("data_type", [np.float32], ids=str)
+@pytest.mark.parametrize(
+    "mat_gen,atol,rtol",
+    [(rand_np_triu, 1e-5, 1e-5), (ones_np_triu, 0, 0)],
+)
+def test_tri_inv_col_sweep_np_linalg_inv(
+    batch_size: int,
+    matrix_size: int,
+    data_type: np.dtype,
+    mat_gen: callable,
+    atol: float,
+    rtol: float,
+):
 
-#     input_x_cpu = mat_gen(batch_size, matrix_size, data_type)
-#     expected_cpu = np_triu_inv_cs(input_x_cpu.transpose(0, 2, 1), data_type)
+    input_x_cpu = mat_gen(batch_size, matrix_size, data_type)
+    golden_numpy_cpu = np.linalg.inv(input_x_cpu)
 
-#     # Convert input matrices from row-major order to column-major order
-#     input_x_cpu = input_x_cpu.transpose(0, 2, 1)
-#     input_x = torch.from_numpy(input_x_cpu).npu()
-#     expected = torch.from_numpy(expected_cpu).npu()
+    # Convert input matrices from row-major order to column-major order
+    input_x_cpu = input_x_cpu.transpose(0, 2, 1)
+    input_x = torch.from_numpy(input_x_cpu).npu()
+    golden_numpy_as_torch = torch.from_numpy(golden_numpy_cpu).npu()
 
-#     torch.npu.synchronize()
-#     actual = torch.ops.npu.triangular_inverse(input_x)
-#     torch.npu.synchronize()
-#     # Transpose matrices back to row-major order
-#     actual = actual.transpose(2, 1)
-#     torch.npu.synchronize()
+    torch.npu.synchronize()
+    actual = torch.ops.npu.triangular_inverse(input_x)
+    torch.npu.synchronize()
 
-#     assert actual.shape == expected.shape, "Output shape does not match expected shape."
-#     assert torch.equal(actual, expected)
-
-
-# @pytest.mark.parametrize("batch_size", [1, 2, 4, 40, 256])
-# @pytest.mark.parametrize("matrix_size", [16, 32, 64, 128])
-# @pytest.mark.parametrize("data_type", [np.float16], ids=str)
-# @pytest.mark.parametrize(
-#     "mat_gen,atol,rtol",
-#     [(rand_np_triu, 1e-5, 1e-5), (ones_np_triu, 0, 0)],
-# )
-# def test_tri_inv_col_sweep_np_linalg_inv(
-#     batch_size: int,
-#     matrix_size: int,
-#     data_type: np.dtype,
-#     mat_gen: callable,
-#     atol: float,
-#     rtol: float,
-# ):
-
-#     input_x_cpu = mat_gen(batch_size, matrix_size, data_type)
-#     golden_numpy_cpu = np.linalg.inv(input_x_cpu)
-
-#     # Convert input matrices from row-major order to column-major order
-#     input_x_cpu = input_x_cpu.transpose(0, 2, 1)
-#     input_x = torch.from_numpy(input_x_cpu).npu()
-#     golden_numpy_as_torch = torch.from_numpy(golden_numpy_cpu).npu()
-
-#     torch.npu.synchronize()
-#     actual = torch.ops.npu.cube_triangular_inverse(input_x)
-#     torch.npu.synchronize()
-
-#     # rtol must be scaled w.r.t to the input size, see Higham's paper, Eq. (2.3)
-#     # https://nhigham.com/wp-content/uploads/2023/08/high89t.pdf
-#     scaled_rtol = min([0.05, 10 * (matrix_size + batch_size) * rtol])
-#     assert torch.allclose(actual, golden_numpy_as_torch, atol=atol, rtol=scaled_rtol)
+    # rtol must be scaled w.r.t to the input size, see Higham's paper, Eq. (2.3)
+    # https://nhigham.com/wp-content/uploads/2023/08/high89t.pdf
+    scaled_rtol = min([0.05, 10 * (matrix_size + batch_size) * rtol])
+    assert torch.allclose(actual, golden_numpy_as_torch, atol=atol, rtol=scaled_rtol)
