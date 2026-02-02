@@ -46,12 +46,15 @@ public:
      *
      * @param [in] vec_len Total length of input tensor.
      * @param [in] matrix_size Input square matrix size.
+     * @param [in] circular_buffer_len Length of workspace circular buffer to
+     * overcome GM memory consistency issues.
      */
-    __aicore__ inline KernelTriInvCubeColSweep(uint32_t vec_len, uint32_t matrix_size)
+    __aicore__ inline KernelTriInvCubeColSweep(uint32_t vec_len, uint32_t matrix_size, uint32_t circular_buffer_len)
         : vec_len_(vec_len),
           matrix_size_(matrix_size),
+          ws_circular_buffer_len_(circular_buffer_len),
           tile_len_(matrix_size * matrix_size),
-          global_in_offset_(AscendC::GetBlockIdx() * tile_len_ * matrix_size),
+          global_in_offset_(AscendC::GetBlockIdx() * tile_len_ * ws_circular_buffer_len_),
           global_out_offset_(AscendC::GetBlockIdx() * tile_len_)
     {}
 
@@ -65,7 +68,7 @@ public:
      */
     __aicore__ inline void Init(GM_ADDR matrix_stream_in, GM_ADDR inv_matrix_out)
     {
-        global_A_.SetGlobalBuffer((__gm__ InputT *)matrix_stream_in, vec_len_ * matrix_size_);
+        global_A_.SetGlobalBuffer((__gm__ InputT *)matrix_stream_in, vec_len_ * ws_circular_buffer_len_);
         global_C_.SetGlobalBuffer((__gm__ OutputT *)inv_matrix_out, vec_len_);
 
         pipe_.InitBuffer(a1_q_, 1, tile_len_ * sizeof(InputT));
@@ -85,16 +88,18 @@ public:
         SyncGroup();
         LoadIdentityMatrixinL0C();
 
+        // Read again the identity matrix from AIV core.
+        uint32_t circular_buf_idx = 0;
+
         // Matrix column sweep algorithm requires `matrix_size_` iterations.
         for (uint32_t iter = 0; iter < matrix_size_; iter++) {
             // Sync with all AIVs in group, to write the matrix.
             SyncGroup();
 
             // Load next matrix A and perform C = A @ C
-            LoadMatrixAintoL0A(iter);
-            AscendC::PipeBarrier<PIPE_ALL>();
+            LoadMatrixAintoL0A(circular_buf_idx);
             MultiplyAWithC();
-            AscendC::PipeBarrier<PIPE_ALL>();
+            circular_buf_idx = (circular_buf_idx + 1) % ws_circular_buffer_len_;
         }
 
         // Write L0C matrix to global memory
@@ -419,6 +424,7 @@ private:
 
     const uint32_t vec_len_;
     const uint32_t matrix_size_;
+    const uint32_t ws_circular_buffer_len_;
     const uint32_t tile_len_;
     const uint32_t global_in_offset_;
     const uint32_t global_out_offset_;
@@ -449,16 +455,17 @@ private:
  */
 template <typename InputT>
 __aicore__ inline void run_tri_inv_cube_col_sweep(GM_ADDR matrix_stream_in, GM_ADDR inv_matrix_out, GM_ADDR workspace,
-                                                  uint32_t vec_len, uint32_t matrix_size)
+                                                  uint32_t vec_len, uint32_t matrix_size,
+                                                  uint32_t ws_circular_buffer_len)
 {
     if ASCEND_IS_AIV {
-        KernelMatGen<InputT> op(matrix_size);
+        KernelMatGen<InputT> op(matrix_size, ws_circular_buffer_len);
         op.Init(matrix_stream_in, workspace);
         op.Process();
     }
 
     if ASCEND_IS_AIC {
-        KernelTriInvCubeColSweep<InputT> op(vec_len, matrix_size);
+        KernelTriInvCubeColSweep<InputT> op(vec_len, matrix_size, ws_circular_buffer_len);
         op.Init(workspace, inv_matrix_out);
         op.Process();
     }

@@ -32,6 +32,7 @@ at::Tensor calc_tiling(const TriInvColumnSweepCubeTiling &tiling)
     tiling_data->num_blocks = tiling.num_blocks;
     tiling_data->num_elems = tiling.num_elems;
     tiling_data->matrix_size = tiling.matrix_size;
+    tiling_data->ws_circular_buffer_len = tiling.ws_circular_buffer_len;
 
     auto tiling_tensor = TorchNpuHelper::CopyTensorHostToDevice(tiling_buffer);
     return tiling_tensor;
@@ -57,12 +58,13 @@ HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
 
     auto tensor_out = at::empty_like(tensor, at::kFloat);
 
-    const TriInvColumnSweepCubeTiling tiling{block_dim, num_elems, matrix_size};
+    const uint32_t WS_CIRCULAR_BUFFER_LEN = 4;
+    const TriInvColumnSweepCubeTiling tiling{block_dim, num_elems, matrix_size, WS_CIRCULAR_BUFFER_LEN};
     const at::Tensor tiling_device = calc_tiling(tiling);
 
     // workspace
     const uint64_t system_workspace_size = static_cast<uint64_t>(platformAscendC->GetLibApiWorkSpaceSize());
-    const uint64_t workspace_size = system_workspace_size + num_elems * matrix_size * 4;
+    const uint64_t workspace_size = system_workspace_size + num_elems * WS_CIRCULAR_BUFFER_LEN * 2;
     const auto options = at::TensorOptions().dtype(at::kByte).device(tensor.options().device());
     auto workspace = at::empty({static_cast<int64_t>(workspace_size)}, options);
 

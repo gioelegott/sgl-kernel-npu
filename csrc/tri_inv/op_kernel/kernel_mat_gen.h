@@ -48,13 +48,16 @@ public:
      * @brief Class constructor.
      *
      * @param [in] matrix_size Input square matrix size.
+     * @param [in] circular_buffer_len Length of workspace circular buffer to
+     * overcome GM memory consistency issues.
      */
-    __aicore__ inline KernelMatGen(uint32_t matrix_size)
+    __aicore__ inline KernelMatGen(uint32_t matrix_size, uint32_t circular_buffer_len)
         : matrix_size_(matrix_size),
           tile_len_(matrix_size * matrix_size),
           aic_id_(AscendC::GetBlockIdx() / AscendC::GetTaskRation()),
           global_in_offset_(aic_id_ * tile_len_),
-          global_out_offset_(aic_id_ * tile_len_ * matrix_size_)
+          ws_circular_buffer_len_(circular_buffer_len),
+          global_out_offset_(aic_id_ * tile_len_ * ws_circular_buffer_len_)
     {}
 
     /**
@@ -67,7 +70,7 @@ public:
     {
         const uint32_t vec_len = AscendC::GetBlockNum() * tile_len_;
         global_in_.SetGlobalBuffer((__gm__ T *)vec_in, vec_len);
-        global_out_.SetGlobalBuffer((__gm__ T *)vec_out, vec_len);
+        global_out_.SetGlobalBuffer((__gm__ T *)vec_out, vec_len * ws_circular_buffer_len_);
 
         pipe_.InitBuffer(in_q_, 1, tile_len_ * sizeof(T));
         pipe_.InitBuffer(out_q_, 1, tile_len_ * sizeof(T));
@@ -102,7 +105,7 @@ public:
         SyncGroup();
 
         const AscendC::LocalTensor<T> work_lt = work_buf_.Get<T>();
-        uint32_t idx = 1;
+        uint32_t circular_buf_idx = 1;
 
         // Matrix column sweep algorithm requires `matrix_size_` iterations.
         for (int32_t col_index = matrix_size_ - 2; col_index >= 0; col_index--) {
@@ -126,8 +129,9 @@ public:
                 out_q_.EnQue<T>(vec_out_lt);
 
                 AscendC::LocalTensor<T> out_lt = out_q_.template DeQue<T>();
-                DataCopy(global_out_[global_out_offset_ + (idx++) * tile_len_], out_lt, out_lt.GetSize());
+                DataCopy(global_out_[global_out_offset_ + circular_buf_idx * tile_len_], out_lt, out_lt.GetSize());
                 out_q_.FreeTensor(out_lt);
+                circular_buf_idx = (circular_buf_idx + 1) % ws_circular_buffer_len_;
             }
 
             // Sync with all AIVs in group, to write the matrix.
@@ -211,6 +215,7 @@ private:
     const uint32_t tile_len_;
     const uint32_t aic_id_;
     const uint32_t global_in_offset_;
+    const uint32_t ws_circular_buffer_len_;
     const uint32_t global_out_offset_;
 };
 }  // namespace npu_kernel

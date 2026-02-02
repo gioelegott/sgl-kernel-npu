@@ -25,5 +25,5 @@ extern "C" __global__ __aicore__ void tri_inv_cube_col_sweep_fp16(GM_ADDR vec_in
     sglang::npu_kernel::TriInvColumnSweepCubeTiling tiling;
     sglang::npu_kernel::GetTilingData(&tiling, tiling_gm);
     sglang::npu_kernel::run_tri_inv_cube_col_sweep<half>(vec_in, vec_out, workspace, tiling.num_elems,
-                                                         tiling.matrix_size);
+                                                         tiling.matrix_size, tiling.ws_circular_buffer_len);
 }
