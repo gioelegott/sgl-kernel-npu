@@ -10,10 +10,6 @@ import torch_npu
 random.seed(42)
 np.random.seed(42)
 
-NPU_DEVICE = os.environ.get("NPU_DEVICE", "npu:1")
-torch.npu.config.allow_internal_format = False
-torch.npu.set_device(NPU_DEVICE)
-
 
 def np_triu_inv_cs(input_x, dtype: np.dtype = np.float16):
     """Return the matrix inverse of a 3d tensor where first dimension is batch dimension.
