@@ -318,8 +318,6 @@ private:
 
         // Load C matrix from L0C into L0B.
         CopyC01ToB1(b1_q_, co1_q_, M_, N_);
-        const uint32_t k_blocks_ = M_ / 16;
-        const uint32_t n_blocks_ = N_ / 16;
         CopyL1ToL0B(b2_q_, b1_q_, k_blocks_, n_blocks_);
         AscendC::LocalTensor<InputT> b2_lt = b2_q_.DeQue<InputT>();
 

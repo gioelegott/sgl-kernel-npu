@@ -97,7 +97,7 @@ def ones_np_triu(batch_size: int, n: int, dtype: np.dtype):
     "mat_gen",
     (rand_np_triu, ones_np_triu),
 )
-def test_tri_inv_col_sweep(
+def test_tri_inv_cube_col_sweep(
     batch_size: int,
     matrix_size: int,
     data_type: np.dtype,

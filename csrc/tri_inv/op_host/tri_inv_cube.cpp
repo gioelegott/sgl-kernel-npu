@@ -64,7 +64,7 @@ HOST_API at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor)
 
     // workspace
     const uint64_t system_workspace_size = static_cast<uint64_t>(platformAscendC->GetLibApiWorkSpaceSize());
-    const uint64_t workspace_size = system_workspace_size + num_elems * WS_CIRCULAR_BUFFER_LEN * 2;
+    const uint64_t workspace_size = system_workspace_size + num_elems * WS_CIRCULAR_BUFFER_LEN * tensor.itemsize();
     const auto options = at::TensorOptions().dtype(at::kByte).device(tensor.options().device());
     auto workspace = at::empty({static_cast<int64_t>(workspace_size)}, options);
 

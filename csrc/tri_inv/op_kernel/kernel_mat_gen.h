@@ -206,7 +206,6 @@ private:
     AscendC::TQue<AscendC::QuePosition::VECOUT, 1> out_q_;
 
     AscendC::TBuf<AscendC::QuePosition::VECCALC> work_buf_;
-    AscendC::TBuf<AscendC::QuePosition::VECCALC> identity_buf_;
 
     AscendC::GlobalTensor<T> global_in_;
     AscendC::GlobalTensor<T> global_out_;
