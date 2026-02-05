@@ -11,10 +11,8 @@
 #ifndef SGL_KERNEL_NPU_OPS_H
 #define SGL_KERNEL_NPU_OPS_H
 
-namespace sglang
-{
-namespace npu_kernel
-{
+namespace sglang {
+namespace npu_kernel {
 at::Tensor helloworld(const at::Tensor &x, const at::Tensor &y);
 
 at::Tensor cache_loc_assign(const at::Tensor &req_indices,
@@ -30,15 +28,15 @@ at::Tensor cache_loc_update(const at::Tensor &req_indices,
                             const at::Tensor &out_cache_loc);
 
 bool assign_cache_op(at::Tensor &dst_tensor, const at::Tensor &src_tensor,
-                        const at::Tensor &dst_start_idx,
-                        const at::Tensor &dst_end_idx,
-                        const at::Tensor &src_start_idx,
-                        const at::Tensor &src_end_idx);
+                     const at::Tensor &dst_start_idx,
+                     const at::Tensor &dst_end_idx,
+                     const at::Tensor &src_start_idx,
+                     const at::Tensor &src_end_idx);
 
 void alloc_extend(const at::Tensor &pre_lens, const at::Tensor &seq_lens,
-                    const at::Tensor &last_loc, const at::Tensor &free_pages,
-                    int64_t pages_size, at::Tensor &out_indices,
-                    at::Tensor &values);
+                  const at::Tensor &last_loc, const at::Tensor &free_pages,
+                  int64_t pages_size, at::Tensor &out_indices,
+                  at::Tensor &values);
 
 void build_tree_efficient(
     const at::Tensor &parent_list, const at::Tensor &selected_index,
@@ -50,22 +48,22 @@ void build_tree_efficient(
 
 std::tuple<at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &>
 mla_preprocess(const at::Tensor &hiddenState, const at::Tensor &gamma0,
-                const at::Tensor &beta0, const at::Tensor &wdqkv,
-                const at::Tensor &descale0, const at::Tensor &gamma1,
-                const at::Tensor &beta1, const at::Tensor &wuq,
-                const at::Tensor &descale1, const at::Tensor &gamma2,
-                const at::Tensor &cos, const at::Tensor &sin,
-                const at::Tensor &wuk, const at::Tensor &kv_cache,
-                const at::Tensor &kv_cache_rope, const at::Tensor &slotmapping,
-                const at::Tensor &quant_scale0, const at::Tensor &quant_offset0,
-                const at::Tensor &bias0, const at::Tensor &quant_scale1,
-                const at::Tensor &quant_offset1, const at::Tensor &bias1,
-                const c10::optional<at::Tensor> &ctkv_scale,
-                const c10::optional<at::Tensor> &q_nope_scale,
-                c10::optional<c10::string_view> cache_mode,
-                c10::optional<c10::string_view> quant_mode, at::Tensor &q_out0,
-                at::Tensor &kv_cache_out0, at::Tensor &q_out1,
-                at::Tensor &kv_cache_out1);
+               const at::Tensor &beta0, const at::Tensor &wdqkv,
+               const at::Tensor &descale0, const at::Tensor &gamma1,
+               const at::Tensor &beta1, const at::Tensor &wuq,
+               const at::Tensor &descale1, const at::Tensor &gamma2,
+               const at::Tensor &cos, const at::Tensor &sin,
+               const at::Tensor &wuk, const at::Tensor &kv_cache,
+               const at::Tensor &kv_cache_rope, const at::Tensor &slotmapping,
+               const at::Tensor &quant_scale0, const at::Tensor &quant_offset0,
+               const at::Tensor &bias0, const at::Tensor &quant_scale1,
+               const at::Tensor &quant_offset1, const at::Tensor &bias1,
+               const c10::optional<at::Tensor> &ctkv_scale,
+               const c10::optional<at::Tensor> &q_nope_scale,
+               c10::optional<c10::string_view> cache_mode,
+               c10::optional<c10::string_view> quant_mode, at::Tensor &q_out0,
+               at::Tensor &kv_cache_out0, at::Tensor &q_out1,
+               at::Tensor &kv_cache_out1);
 
 void batch_matmul_transpose(const at::Tensor &tensor_a,
                             const at::Tensor &tensor_b, at::Tensor &tensor_c,
@@ -73,37 +71,37 @@ void batch_matmul_transpose(const at::Tensor &tensor_a,
                             c10::optional<c10::string_view> quant_mode);
 
 void transfer_kv_dim_exchange(at::Tensor &device_k, at::Tensor &host_k,
-                                at::Tensor &device_v, at::Tensor &host_v,
-                                const at::Tensor &device_indices,
-                                const at::Tensor &host_indices, int64_t page_size,
-                                int64_t direction, int64_t flags);
+                              at::Tensor &device_v, at::Tensor &host_v,
+                              const at::Tensor &device_indices,
+                              const at::Tensor &host_indices, int64_t page_size,
+                              int64_t direction, int64_t flags);
 
 at::Tensor bgmv_expand(at::Tensor &x, at::Tensor &weight, at::Tensor &indices,
-                        at::Tensor &y, int64_t slice_offset, int64_t slice_size);
+                       at::Tensor &y, int64_t slice_offset, int64_t slice_size);
 
 void bgmv_shrink(at::Tensor &x, at::Tensor &weight, at::Tensor &indices,
-                    at::Tensor &y, double scale);
+                 at::Tensor &y, double scale);
 
 at::Tensor sgmv_expand(at::Tensor &x, at::Tensor &weight,
-                        at::Tensor &lora_indices, at::Tensor &seq_len,
-                        at::Tensor &y, int64_t slice_offset, int64_t slice_size);
+                       at::Tensor &lora_indices, at::Tensor &seq_len,
+                       at::Tensor &y, int64_t slice_offset, int64_t slice_size);
 
 void sgmv_shrink(at::Tensor &x, at::Tensor &weight, at::Tensor &lora_indices,
-                    at::Tensor &seq_len, at::Tensor &y, double scale);
+                 at::Tensor &seq_len, at::Tensor &y, double scale);
 
 at::Tensor sgemmv_expand(at::Tensor &x, at::Tensor &weight,
-                            at::Tensor &lora_indices, at::Tensor &seq_len,
-                            at::Tensor &lora_ranks, at::Tensor &slice_offsets,
-                            at::Tensor &y);
+                         at::Tensor &lora_indices, at::Tensor &seq_len,
+                         at::Tensor &lora_ranks, at::Tensor &slice_offsets,
+                         at::Tensor &y);
 
 void sgemmv_shrink(at::Tensor &x, at::Tensor &weight, at::Tensor &lora_indices,
-                    at::Tensor &seq_len, at::Tensor &lora_ranks,
-                    at::Tensor &lora_scales, at::Tensor &y);
+                   at::Tensor &seq_len, at::Tensor &lora_ranks,
+                   at::Tensor &lora_scales, at::Tensor &y);
 
 #ifdef BUILD_CATLASS_MODULE
 void catlass_matmul_basic(const at::Tensor &tensor_a,
-                            const at::Tensor &tensor_b, at::Tensor &tensor_c,
-                            c10::optional<c10::string_view> format_mode);
+                          const at::Tensor &tensor_b, at::Tensor &tensor_c,
+                          c10::optional<c10::string_view> format_mode);
 #endif
 
 at::Tensor lightning_indexer(
@@ -135,7 +133,7 @@ at::Tensor tri_inv_col_sweep(const at::Tensor &tensor_in);
  * @return at::Tensor Returns tensor of same shape where each matrix of size n
  * is inversed.
  */
-    at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor_in);
+at::Tensor tri_inv_cube_col_sweep(const at::Tensor &tensor_in);
 } // namespace npu_kernel
 
 } // namespace sglang
