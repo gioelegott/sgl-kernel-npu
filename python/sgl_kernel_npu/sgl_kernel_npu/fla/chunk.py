@@ -26,11 +26,10 @@ def fast_inv_tril(A: torch.Tensor):
     B, T, H, BT = A.shape
     chunk_size = BT
 
-    padding_size = chunk_size - T % chunk_size
+    padding_size = (chunk_size - T % chunk_size) % chunk_size
     A = F.pad(A, (0, 0, 0, 0, 0, padding_size, 0, 0))
 
-    A = A.transpose(1, 2)
-    A = A.reshape(B, H, -1, BT, BT).contiguous()
+    A = A.transpose(1, 2).contiguous()
     A = A.reshape(-1, BT, BT)
 
     assert A.shape[-2] == A.shape[-1]
