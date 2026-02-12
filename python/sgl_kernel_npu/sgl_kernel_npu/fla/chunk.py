@@ -23,20 +23,10 @@ from sgl_kernel_npu.fla.wy_fast import recompute_w_u_fwd_npu as recompute_w_u_fw
 
 def fast_inv_tril(A: torch.Tensor):
     dtype = A.dtype
-    B, T, H, BT = A.shape
-    chunk_size = BT
-
-    padding_size = (chunk_size - T % chunk_size) % chunk_size
-    A = F.pad(A, (0, 0, 0, 0, 0, padding_size, 0, 0))
-
-    A = A.transpose(1, 2).contiguous()
-    A = A.reshape(-1, BT, BT)
-
     assert A.shape[-2] == A.shape[-1]
-
+    chunk_size = A.shape[-1]
     identity = torch.eye(chunk_size, dtype=torch.float32, device=A.device)
     A_inv = torch.ops.npu.triangular_inverse(identity - A.to(torch.float32))
-    A_inv = A_inv.reshape(B, H, -1, BT)[:, :, :T, :].transpose(1, 2).contiguous()
     return A_inv.to(dtype)
 
 
@@ -52,6 +42,22 @@ def inv_tril_inplace(A: torch.Tensor):
         sub = A[..., :i, :i].clone()
         A[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
     return A + torch.eye(chunk_size, dtype=A.dtype, device=A.device)
+
+
+def fast_inv_tril_wrapper(A: torch.Tensor):
+    dtype = A.dtype
+    B, T, H, BT = A.shape
+    chunk_size = BT
+
+    padding_size = (chunk_size - T % chunk_size) % chunk_size
+    A = F.pad(A, (0, 0, 0, 0, 0, padding_size, 0, 0))
+
+    A = A.transpose(1, 2).contiguous()
+    A = A.reshape(-1, BT, BT)
+
+    A_inv = fast_inv_tril(A)
+    A_inv = A_inv.reshape(B, H, -1, BT)[:, :, :T, :].transpose(1, 2).contiguous()
+    return A_inv.to(dtype)
 
 
 def chunk_gated_delta_rule_native(
