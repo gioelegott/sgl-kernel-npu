@@ -23,21 +23,10 @@ from sgl_kernel_npu.fla.wy_fast import recompute_w_u_fwd_npu as recompute_w_u_fw
 
 def fast_inv_tril(A: torch.Tensor):
     dtype = A.dtype
-    B, T, H, BT = A.shape
-    chunk_size = BT
-
-    padding_size = chunk_size - T % chunk_size
-    A = F.pad(A, (0, 0, 0, 0, 0, padding_size, 0, 0))
-
-    A = A.transpose(1, 2)
-    A = A.reshape(B, H, -1, BT, BT).contiguous()
-    A = A.reshape(-1, BT, BT)
-
     assert A.shape[-2] == A.shape[-1]
-    
+    chunk_size = A.shape[-1]
     identity = torch.eye(chunk_size, dtype=torch.float32, device=A.device)
-    A_inv = torch.ops.npu.triangular_inverse(identity - A.to(torch.float32))
-    A_inv = A_inv.reshape(B, H, -1, BT)[:, :, :T, :].transpose(1, 2).contiguous()
+    A_inv = torch.ops.npu.triangular_inverse(identity + A.to(torch.float32))
     return A_inv.to(dtype)
 
 
@@ -53,6 +42,27 @@ def inv_tril_inplace(A: torch.Tensor):
         sub = A[..., :i, :i].clone()
         A[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
     return A + torch.eye(chunk_size, dtype=A.dtype, device=A.device)
+
+def fast_inv_tril_wrapper(A: torch.Tensor):
+    dtype = A.dtype
+    B, T, H, BT = A.shape
+    chunk_size = BT
+
+    padding_size = (chunk_size - T % chunk_size) % chunk_size
+    torch.npu.synchronize()
+    A = F.pad(A, (0, 0, 0, 0, 0, padding_size, 0, 0))
+    torch.npu.synchronize()
+
+    A = A.transpose(1, 2).contiguous()
+    torch.npu.synchronize()
+    A = A.view(B, H, -1, BT, BT)
+    A = A.view(-1, BT, BT)
+    torch.npu.synchronize()
+    A_inv = fast_inv_tril(A)
+    torch.npu.synchronize()
+    A_inv = A_inv.view(B, H, -1, BT)[:, :, :T, :].contiguous().transpose(1, 2).contiguous()
+    torch.npu.synchronize()
+    return A_inv.to(dtype)
 
 
 def chunk_gated_delta_rule_native(
@@ -223,7 +233,7 @@ def chunk_gated_delta_rule_fwd(
     A = chunk_scaled_dot_kkt_fwd(
         k=k, beta=beta, g_cumsum=g, cu_seqlens=cu_seqlens, output_dtype=torch.float32
     )
-    A = fast_inv_tril(A)
+    A = fast_inv_tril_wrapper(A)
     w, u = recompute_w_u_fwd(
         k=k,
         v=v,
@@ -382,4 +392,4 @@ def chunk_gated_delta_rule_npu(
     o = o.to(q.dtype)
     if head_first:
         o = rearrange(o, "b t h ... -> b h t ...")
-    return o, final_state, h
+    return o, final_state
