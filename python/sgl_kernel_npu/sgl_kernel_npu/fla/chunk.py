@@ -20,6 +20,7 @@ from sgl_kernel_npu.fla.solve_tril import solve_tril_npu as solve_tril
 from sgl_kernel_npu.fla.utils import SUPPRESS_LEVEL, input_guard
 from sgl_kernel_npu.fla.wy_fast import recompute_w_u_fwd_npu as recompute_w_u_fwd
 
+from sgl_kernel_npu.fla.utils import prepare_chunk_indices
 
 def fast_inv_tril(A: torch.Tensor):
     dtype = A.dtype
@@ -43,26 +44,34 @@ def inv_tril_inplace(A: torch.Tensor):
         A[..., i, :i] = row + (row.unsqueeze(-1) * sub).sum(-2)
     return A + torch.eye(chunk_size, dtype=A.dtype, device=A.device)
 
-def fast_inv_tril_wrapper(A: torch.Tensor):
+def fast_inv_tril_wrapper(A: torch.Tensor, cu_seqlens: Optional[torch.LongTensor] = None):
     dtype = A.dtype
     B, T, H, BT = A.shape
     chunk_size = BT
 
-    padding_size = (chunk_size - T % chunk_size) % chunk_size
-    torch.npu.synchronize()
-    A = F.pad(A, (0, 0, 0, 0, 0, padding_size, 0, 0))
-    torch.npu.synchronize()
+    # torch.save(A, "A.pt")
+    # torch.save(cu_seqlens, "cu_seqlens.pt")
 
-    A = A.transpose(1, 2).contiguous()
-    torch.npu.synchronize()
-    A = A.view(B, H, -1, BT, BT)
-    A = A.view(-1, BT, BT)
-    torch.npu.synchronize()
-    A_inv = fast_inv_tril(A)
-    torch.npu.synchronize()
-    A_inv = A_inv.view(B, H, -1, BT)[:, :, :T, :].contiguous().transpose(1, 2).contiguous()
-    torch.npu.synchronize()
-    return A_inv.to(dtype)
+    # print(A.shape, cu_seqlens)
+
+    def get_pad_size(T, chunk_size):
+        return (chunk_size - T % chunk_size) % chunk_size
+
+    A_list = [F.pad(A[:, cu_seqlens[i] : cu_seqlens[i + 1], :, :], (0, 0, 0, 0, 0, get_pad_size(cu_seqlens[i + 1] - cu_seqlens[i], chunk_size), 0, 0)) for i in range(len(cu_seqlens) - 1)]
+    # A = torch.stack(A, dim=0)
+    # print(A.shape)
+    A_inv_list = []
+    for i, A in enumerate(A_list):
+        A = A.transpose(1, 2).contiguous()
+        A = A.view(-1, BT, BT)
+        torch.npu.synchronize()
+        A_inv = fast_inv_tril(A)
+        torch.npu.synchronize()
+        A_inv_list.append(A_inv.view(B, H, -1, BT)[:, :, :cu_seqlens[i+1] - cu_seqlens[i], :].contiguous().transpose(1, 2).contiguous())
+    A_inv = torch.cat(A_inv_list, dim=1).to(dtype)
+    # print(A_inv.shape, cu_seqlens)
+
+    return A_inv
 
 
 def chunk_gated_delta_rule_native(
@@ -233,7 +242,7 @@ def chunk_gated_delta_rule_fwd(
     A = chunk_scaled_dot_kkt_fwd(
         k=k, beta=beta, g_cumsum=g, cu_seqlens=cu_seqlens, output_dtype=torch.float32
     )
-    A = fast_inv_tril_wrapper(A)
+    A = fast_inv_tril_wrapper(A, cu_seqlens)
     w, u = recompute_w_u_fwd(
         k=k,
         v=v,
@@ -393,3 +402,8 @@ def chunk_gated_delta_rule_npu(
     if head_first:
         o = rearrange(o, "b t h ... -> b h t ...")
     return o, final_state
+
+if __name__ == "__main__":
+    A = torch.load("A.pt")
+    cu_seqlens = torch.load("cu_seqlens.pt")
+    A_inv = fast_inv_tril_wrapper(A, cu_seqlens)
