@@ -67,8 +67,10 @@ def fast_inv_tril_wrapper(
             * chunk_size
         )
 
-        A_list = [
-            F.pad(
+        A_list = []
+        for i in range(len(cu_seqlens) - 1):
+            pad_size = get_pad_size(lengths[i], chunk_size)
+            A = F.pad(
                 A[:, cu_seqlens[i] : cu_seqlens[i + 1], :, :],
                 (
                     0,
@@ -76,13 +78,13 @@ def fast_inv_tril_wrapper(
                     0,
                     0,
                     0,
-                    get_pad_size(cu_seqlens[i + 1] - cu_seqlens[i], chunk_size),
+                    pad_size,
                     0,
                     0,
                 ),
             )
-            for i in range(len(cu_seqlens) - 1)
-        ]
+            A_list.append(A)
+
         A = torch.cat(A_list, dim=1)
         A = A.transpose(1, 2).contiguous()
         padded_shape = A.shape
