@@ -3,6 +3,8 @@
 # Copyright (c) 2023-2025, Songlin Yang, Yu Zhang
 import typing
 from typing import Optional
+from math import ceil
+import triton
 
 import torch
 import torch.nn.functional as F
@@ -20,14 +22,14 @@ from sgl_kernel_npu.fla.solve_tril import solve_tril_npu as solve_tril
 from sgl_kernel_npu.fla.utils import SUPPRESS_LEVEL, input_guard
 from sgl_kernel_npu.fla.wy_fast import recompute_w_u_fwd_npu as recompute_w_u_fwd
 
-from sgl_kernel_npu.fla.utils import prepare_chunk_indices
+from sgl_kernel_npu.fla.utils import prepare_lens
 
 def fast_inv_tril(A: torch.Tensor):
     dtype = A.dtype
     assert A.shape[-2] == A.shape[-1]
     chunk_size = A.shape[-1]
     identity = torch.eye(chunk_size, dtype=torch.float32, device=A.device)
-    A_inv = torch.ops.npu.triangular_inverse(identity + A.to(torch.float32))
+    A_inv = torch.ops.npu.triangular_inverse(identity - A.to(torch.float32))
     return A_inv.to(dtype)
 
 
@@ -49,29 +51,44 @@ def fast_inv_tril_wrapper(A: torch.Tensor, cu_seqlens: Optional[torch.LongTensor
     B, T, H, BT = A.shape
     chunk_size = BT
 
-    # torch.save(A, "A.pt")
-    # torch.save(cu_seqlens, "cu_seqlens.pt")
+    if cu_seqlens is not None:
+        def get_pad_size(T, chunk_size):
+            return (chunk_size - T % chunk_size) % chunk_size
 
-    # print(A.shape, cu_seqlens)
+        lengths = prepare_lens(cu_seqlens)
 
-    def get_pad_size(T, chunk_size):
-        return (chunk_size - T % chunk_size) % chunk_size
+        chunks_per_seq = triton.cdiv(lengths, chunk_size)
+        starts = torch.cat([cu_seqlens.new_tensor([0]), chunks_per_seq.cumsum(0)[:-1]]) * chunk_size
 
-    A_list = [F.pad(A[:, cu_seqlens[i] : cu_seqlens[i + 1], :, :], (0, 0, 0, 0, 0, get_pad_size(cu_seqlens[i + 1] - cu_seqlens[i], chunk_size), 0, 0)) for i in range(len(cu_seqlens) - 1)]
-    # A = torch.stack(A, dim=0)
-    # print(A.shape)
-    A_inv_list = []
-    for i, A in enumerate(A_list):
+        A_list = [F.pad(A[:, cu_seqlens[i] : cu_seqlens[i + 1], :, :], (0, 0, 0, 0, 0, get_pad_size(cu_seqlens[i + 1] - cu_seqlens[i], chunk_size), 0, 0)) for i in range(len(cu_seqlens) - 1)]
+        A = torch.cat(A_list, dim=1)
+        A = A.transpose(1, 2).contiguous()
+        padded_shape = A.shape
+        A = A.view(-1, BT, BT)
+
+        torch.npu.synchronize()
+        A_inv = fast_inv_tril(-A)
+        torch.npu.synchronize()
+
+        A_inv = A_inv.view(padded_shape).transpose(1, 2).contiguous()
+        A_inv_list = [A_inv[:, starts[i] : starts[i] + lengths[i], :, :] for i in range(len(cu_seqlens) - 1)]
+        A_inv = torch.cat(A_inv_list, dim=1).to(dtype)
+
+        return A_inv
+    else:
+        padding_size = (chunk_size - T % chunk_size) % chunk_size
+        A = F.pad(A, (0, 0, 0, 0, 0, padding_size, 0, 0))
+
         A = A.transpose(1, 2).contiguous()
         A = A.view(-1, BT, BT)
+
         torch.npu.synchronize()
         A_inv = fast_inv_tril(A)
         torch.npu.synchronize()
-        A_inv_list.append(A_inv.view(B, H, -1, BT)[:, :, :cu_seqlens[i+1] - cu_seqlens[i], :].contiguous().transpose(1, 2).contiguous())
-    A_inv = torch.cat(A_inv_list, dim=1).to(dtype)
-    # print(A_inv.shape, cu_seqlens)
 
-    return A_inv
+        A_inv = A_inv.view(B, H, -1, BT)[:, :, :T, :].contiguous().transpose(1, 2).contiguous()
+        return A_inv.to(dtype)
+
 
 
 def chunk_gated_delta_rule_native(
@@ -404,6 +421,6 @@ def chunk_gated_delta_rule_npu(
     return o, final_state
 
 if __name__ == "__main__":
-    A = torch.load("A.pt")
-    cu_seqlens = torch.load("cu_seqlens.pt")
+    A = torch.load("A_1.pt")
+    cu_seqlens = torch.load("cu_seqlens_2.pt")
     A_inv = fast_inv_tril_wrapper(A, cu_seqlens)
